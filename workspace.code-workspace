@@ -5,5 +5,9 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python.analysis.typeCheckingMode": "standard",
+		"python.defaultInterpreterPath": "~/.platformio/penv/bin/python",
+		"python.testing.pytestEnabled": false
+	}
 }

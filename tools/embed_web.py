@@ -3,9 +3,9 @@
 import gzip
 import os
 
-Import("env")  # noqa: F821  (provided by PlatformIO)
+Import("env")  # noqa: F821  # pyright: ignore[reportUndefinedVariable]  (provided by PlatformIO)
 
-project_dir = env.subst("$PROJECT_DIR")  # noqa: F821
+project_dir = env.subst("$PROJECT_DIR")  # noqa: F821  # pyright: ignore[reportUndefinedVariable]
 source = os.path.join(project_dir, "web", "index.html")
 target = os.path.join(project_dir, "src", "web_index.h")
 

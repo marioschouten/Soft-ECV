@@ -11,7 +11,10 @@ def build_demo(project_dir):
     with open(os.path.join(project_dir, "web", "demo-mock.js"), encoding="utf-8") as f:
         mock = f.read()
     with open(os.path.join(project_dir, "src", "main.cpp"), encoding="utf-8") as f:
-        version = re.search(r'FW_VERSION = "([^"]+)"', f.read()).group(1)
+        match = re.search(r'FW_VERSION = "([^"]+)"', f.read())
+    if match is None:
+        raise RuntimeError('src/main.cpp has no FW_VERSION = "..." to put in the demo')
+    version = match.group(1)
 
     mock = mock.replace("__FW_VERSION__", version)
     if "<script>" not in page:
@@ -34,4 +37,4 @@ def build_demo(project_dir):
 
 if __name__ == "__main__":
     path, fw = build_demo(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    print("build_demo: %s (firmware %s)" % (path, fw))
+    print(f"build_demo: {path} (firmware {fw})")
