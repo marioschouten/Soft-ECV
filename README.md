@@ -52,7 +52,7 @@ The hotspot also starts when WiFi has been lost for 5 minutes (adjustable), and 
 
 The blue LED on the D1 blinks while the setup hotspot is on and stays on while connected to WiFi.
 
-**Updating:** Settings → Firmware update → choose `.pio/build/d1_mini/firmware.bin`. Settings are kept. A D1 running version 1.2.x (with ElegantOTA) can be updated to 1.3 through its ElegantOTA page. It then starts with the setup hotspot, because the settings moved from `settings.h` to flash.
+**Updating:** Settings → Firmware update → choose the `.bin` file from [Releases](https://github.com/marioschouten/Soft-ECV/releases), or your own build in `.pio/build/d1_mini/firmware.bin`. Settings are kept. A D1 running version 1.2.x (with ElegantOTA) can be updated to 1.3 through its ElegantOTA page. It then starts with the setup hotspot, because the settings moved from `settings.h` to flash.
 
 ## Web interface
 
