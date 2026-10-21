@@ -13,9 +13,9 @@ Soft E-CV runs on a Wemos D1 mini (ESP8266) and acts as the *boiler side* of an 
 
 ## Try the demo
 
-**[docs/demo.html](docs/demo.html)** is the real web interface of the D1, running in your browser with a simulated heating cycle: the Elga asks for heat, Soft E-CV calculates the modulation every minute as the firmware does, the power level steps down as the water warms up, and the Elga's OpenTherm conversation scrolls by once per second, with correct frames. All tabs work, settings can be changed (they are not saved), and nothing is sent anywhere.
+**[The demo](https://marioschouten.github.io/Soft-ECV/demo.html)** is the real web interface of the D1, running in your browser with a simulated heating cycle: the Elga asks for heat, Soft E-CV calculates the modulation every minute as the firmware does, the power level steps down as the water warms up, and the Elga's OpenTherm conversation scrolls by once per second, with correct frames. All tabs work, settings can be changed (they are not saved), and nothing is sent anywhere.
 
-To run it, download `docs/demo.html` and open it in a browser. No server or internet connection is needed. GitHub shows the file as source code. If GitHub Pages is enabled for the `docs` folder, the demo also runs at `https://<user>.github.io/<repository>/demo.html`. Add `#settings` or `#debug` to the address to open that tab.
+The demo is served by GitHub Pages from the `docs` folder. Add `#settings` or `#debug` to the address to open that tab, for example [the debug tab](https://marioschouten.github.io/Soft-ECV/demo.html#debug). It also works offline: download [docs/demo.html](docs/demo.html) and open it in a browser, no server or internet connection needed.
 
 The screenshots in this README are taken from the demo. The demo is rebuilt from `web/index.html` and `web/demo-mock.js` on every firmware build (or with `python3 tools/build_demo.py`), so it always shows the current interface.
 
