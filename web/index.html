@@ -1,0 +1,1192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Soft E-CV</title>
+<style>
+/* Layout: one instrument panel. Live "request ⇄ reply" strip on top, 30-minute trend below,
+   then sensors + system side by side, raw OpenTherm traffic last.
+   Fonts are system stacks on purpose: the page is served by the D1 and must work offline. */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --surface-2: #f5f7f9;
+  --ink: #15202b;
+  --ink-2: #4a5866;
+  --muted: #758392;
+  --line: #d8dfe6;
+  --flow: #d9480f;
+  --return: #1971c2;
+  --setp: #758392;
+  --good: #2b8a3e;
+  --warn: #c76a00;
+  --crit: #c92a2a;
+  --btn: #15202b;
+  --btn-ink: #ffffff;
+  --ribbon: #fff4d6;
+  --ribbon-ink: #6b4e00;
+
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --r: 10px;
+  --fs-xs: 11px; --fs-s: 12.5px; --fs-m: 14px; --fs-l: 18px; --fs-xl: 34px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0c1116; --surface: #141b22; --surface-2: #1a232c; --ink: #e6edf3; --ink-2: #a8b5c1;
+    --muted: #7c8996; --line: #283440; --flow: #ff7b3d; --return: #4dabf7; --setp: #8a97a4;
+    --good: #51cf66; --warn: #fcc419; --crit: #ff6b6b; --btn: #e6edf3; --btn-ink: #0c1116;
+    --ribbon: #2b2410; --ribbon-ink: #f2d27a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c1116; --surface: #141b22; --surface-2: #1a232c; --ink: #e6edf3; --ink-2: #a8b5c1;
+  --muted: #7c8996; --line: #283440; --flow: #ff7b3d; --return: #4dabf7; --setp: #8a97a4;
+  --good: #51cf66; --warn: #fcc419; --crit: #ff6b6b; --btn: #e6edf3; --btn-ink: #0c1116;
+  --ribbon: #2b2410; --ribbon-ink: #f2d27a;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font: var(--fs-m)/1.45 var(--ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 40px;
+}
+.wrap { max-width: 1140px; margin: 0 auto; display: grid; gap: 16px; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+h2 { font-size: var(--fs-m); font-weight: 650; }
+.eyebrow { font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--return); outline-offset: 2px; }
+
+/* mockup ribbon */
+.ribbon { background: var(--ribbon); color: var(--ribbon-ink); font-size: var(--fs-s);
+  margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding: 8px max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center; }
+.ribbon button { background: none; border: 1px solid currentColor; border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+
+/* header */
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding-top: 18px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand svg { flex: none; }
+.brand h1 { font-size: var(--fs-l); font-weight: 700; letter-spacing: -.01em; }
+.brand p { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-s); color: var(--ink-2); white-space: nowrap; }
+.chip b { color: var(--ink); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); flex: none; }
+.dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); font-size: var(--fs-s); font-weight: 600; text-decoration: none; color: var(--ink); }
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 14px; }
+.panel-head .sub { color: var(--muted); font-size: var(--fs-s); }
+
+/* live strip */
+.live { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1.55fr); align-items: stretch; }
+.side { display: grid; gap: 14px; align-content: start; }
+.big { display: flex; align-items: baseline; gap: 6px; }
+.big .v { font-size: var(--fs-xl); font-weight: 650; letter-spacing: -.02em; line-height: 1; }
+.big .u { color: var(--muted); font-size: var(--fs-m); }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; margin: 0; font-size: var(--fs-m); }
+.kv dt { color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.kv dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.id { font: 600 10px/1 var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; flex: none; }
+.src { font-size: 10px; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: var(--fs-s); font-weight: 600;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.pill.on { color: var(--flow); border-color: color-mix(in srgb, var(--flow) 45%, var(--line)); background: color-mix(in srgb, var(--flow) 9%, var(--surface)); }
+.pill.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.pill.crit { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 50%, var(--line)); background: color-mix(in srgb, var(--crit) 8%, var(--surface)); }
+.pill svg { width: 12px; height: 12px; }
+
+.link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 4px; text-align: center; }
+.link svg { width: 100%; height: 64px; overflow: visible; }
+.link .lbl { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.link .meta { font-size: var(--fs-xs); color: var(--muted); line-height: 1.5; }
+.wire { stroke: var(--line); stroke-width: 2; fill: none; }
+.wire-arrow { fill: var(--line); }
+.pkt-req { fill: var(--ink-2); } .pkt-rep { fill: var(--return); }
+@keyframes go { from { transform: translateX(0); opacity: 0 } 10% { opacity: 1 } 90% { opacity: 1 } to { transform: translateX(100px); opacity: 0 } }
+@keyframes back { from { transform: translateX(0); opacity: 0 } 10% { opacity: 1 } 90% { opacity: 1 } to { transform: translateX(-100px); opacity: 0 } }
+.pkt-req { animation: go 1s linear infinite; }
+.pkt-rep { animation: back 1s linear infinite; animation-delay: .5s; }
+
+.reply-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.temps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.temp { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.temp .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--fs-s); color: var(--ink-2); }
+.temp .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.temp .v { font-size: 26px; }
+.delta { grid-column: 1 / -1; font-size: var(--fs-s); color: var(--muted); }
+.gauges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.gauge { text-align: center; }
+.gauge svg { width: 100%; max-width: 150px; height: auto; display: block; margin: 0 auto; }
+.gauge .cap { font-size: var(--fs-s); color: var(--ink-2); display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; }
+.g-track { fill: none; stroke: var(--line); stroke-width: 9; stroke-linecap: round; }
+.g-mod { fill: none; stroke: var(--flow); stroke-width: 9; stroke-linecap: round; }
+.g-pres { fill: none; stroke: var(--return); stroke-width: 9; stroke-linecap: round; }
+.g-zone-good { fill: none; stroke: var(--good); stroke-width: 3; }
+.g-zone-warn { fill: none; stroke: var(--warn); stroke-width: 3; }
+.g-zone-crit { fill: none; stroke: var(--crit); stroke-width: 3; }
+.g-mark { stroke: var(--ink); stroke-width: 2.5; stroke-linecap: round; }
+.g-val { fill: var(--ink); font: 650 22px var(--ui); font-variant-numeric: tabular-nums; }
+.g-unit { fill: var(--muted); font: 500 10px var(--ui); }
+.g-tick { fill: var(--muted); font: 500 9px var(--ui); }
+.flags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.extra { grid-column: 1 / -1; }
+
+/* trend */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--fs-s); color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 16px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.trend-wrap { position: relative; }
+#trend svg { display: block; width: 100%; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.tick { fill: var(--muted); font: 500 10.5px var(--ui); font-variant-numeric: tabular-nums; }
+.tick.ttl { fill: var(--ink-2); font-weight: 600; }
+.l-flow { stroke: var(--flow); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.l-ret { stroke: var(--return); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.l-sp { stroke: var(--setp); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.l-mod { stroke: var(--ink-2); stroke-width: 1.6; fill: none; }
+.a-mod { fill: var(--ink-2); opacity: .12; }
+.end { stroke: var(--surface); stroke-width: 2; }
+.end.flow { fill: var(--flow); } .end.ret { fill: var(--return); }
+.dlab { fill: var(--ink); font: 600 11.5px var(--ui); font-variant-numeric: tabular-nums; }
+.dlab-sub { fill: var(--muted); font: 500 10.5px var(--ui); }
+.cross { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 2 3; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: var(--fs-s); box-shadow: 0 6px 20px rgb(0 0 0 / .12); min-width: 150px; display: grid; gap: 3px; }
+.tip .t { color: var(--muted); font-size: var(--fs-xs); }
+.tip .r { display: flex; justify-content: space-between; gap: 12px; }
+.tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip i { width: 10px; height: 0; border-top: 2.5px solid; display: inline-block; }
+
+/* sensors + system */
+.duo { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+.tbl-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-s); }
+th { text-align: left; font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 0 10px 8px 0; white-space: nowrap; }
+td { padding: 9px 10px 9px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+.addr { font-family: var(--mono); font-size: 12px; letter-spacing: .02em; white-space: nowrap; }
+.family { color: var(--muted); }
+.t-cell { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); min-width: 9.5em; }
+.st { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); white-space: nowrap; }
+.note { margin: 12px 0 0; color: var(--muted); font-size: var(--fs-s); max-width: 65ch; }
+.warnline { margin: 10px 0 0; color: var(--crit); font-size: var(--fs-s); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sys { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0; font-size: var(--fs-s); }
+.sys dt { color: var(--muted); }
+.sys dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sys .sep { grid-column: 1 / -1; border-top: 1px solid var(--line); margin: 4px 0; }
+.bar { height: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.bar > div { height: 100%; background: var(--ink-2); }
+
+/* traffic */
+.log td { font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.log td.desc { font-family: var(--ui); font-size: var(--fs-s); color: var(--ink-2); white-space: normal; min-width: 14em; }
+.log .tag { font: 600 10px var(--mono); padding: 2px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+.log .tag.w { color: var(--flow); border-color: color-mix(in srgb, var(--flow) 40%, var(--line)); }
+.log td.val { font-family: var(--ui); font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
+.log tr.fresh td { animation: fresh 1.2s ease-out; }
+@keyframes fresh { from { background: color-mix(in srgb, var(--return) 12%, transparent); } to { background: transparent; } }
+.log .arrow { color: var(--muted); }
+
+footer { color: var(--muted); font-size: var(--fs-s); text-align: center; }
+
+/* first-use dialog */
+dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--surface); color: var(--ink); width: min(420px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(8 12 16 / .55); }
+.dlg { padding: 22px; display: grid; gap: 14px; }
+.dlg p { margin: 0; color: var(--ink-2); font-size: var(--fs-s); }
+.field { display: grid; gap: 5px; }
+.field label { font-size: var(--fs-s); font-weight: 600; }
+.field input { padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface-2); }
+.field input[readonly] { color: var(--muted); }
+.err { color: var(--crit); font-size: var(--fs-s); min-height: 1.2em; margin: 0; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--btn); color: var(--btn-ink); padding: 10px 16px; border-radius: 8px; font-size: var(--fs-s); max-width: calc(100vw - 32px); z-index: 20; }
+
+/* tabs + views */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 14px;
+  font-weight: 600; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--flow); }
+.view { display: grid; gap: 16px; }
+.cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.duo.rev { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
+
+/* forms */
+.form { display: grid; gap: 12px; }
+.form-row { display: grid; grid-template-columns: minmax(0, 1fr) 7em; gap: 12px; }
+.field input, .field select { width: 100%; min-width: 0; }
+.field select { padding: 8px 10px; }
+.hint { font-size: var(--fs-xs); color: var(--muted); line-height: 1.5; }
+.current { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 8px; font-size: var(--fs-s); }
+.sep-h { border-top: 1px solid var(--line); margin: 16px 0; }
+.nets { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.nets label { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); cursor: pointer; font-size: var(--fs-s); }
+.nets li:first-child label { border-top: 0; }
+.nets label:has(input:checked) { background: var(--surface-2); }
+.nets input { accent-color: var(--ink); margin: 0; }
+.nets .name { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.nets .meta { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.bars rect { fill: var(--line); } .bars rect.on { fill: var(--ink-2); }
+.result { font-size: var(--fs-s); display: flex; gap: 6px; align-items: center; margin: 0; color: var(--ink-2); min-height: 1.4em; }
+.result.ok { color: var(--good); }
+.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--line)); }
+.btn.danger-fill { background: var(--crit); border-color: var(--crit); color: #fff; }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--fs-s); font-weight: 600; }
+
+/* toggles */
+.tg { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.tg:first-child { border-top: 0; padding-top: 0; }
+.tg .n { font-weight: 600; font-size: var(--fs-m); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.tg .n code { font: 11px var(--mono); color: var(--muted); font-weight: 400; }
+.tg .d { color: var(--muted); font-size: var(--fs-s); grid-column: 1; }
+.sw { appearance: none; -webkit-appearance: none; width: 38px; height: 22px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer;
+  grid-row: 1 / span 2; grid-column: 2; transition: background .15s; margin: 0; flex: none; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .15s; }
+.sw:checked { background: var(--good); } .sw:checked::after { transform: translateX(16px); }
+.console { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; height: 360px; overflow: auto; padding: 10px 12px; font: 12px/1.6 var(--mono); }
+.console div { white-space: pre; }
+.console .c { color: var(--muted); }
+.console .k { color: var(--ink-2); font-weight: 700; }
+.console .empty { color: var(--muted); font-family: var(--ui); white-space: normal; }
+
+/* hotspot setup */
+#hotspot { width: min(380px, calc(100vw - 32px)); }
+.hs-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.steps span { display: grid; gap: 5px; font-size: var(--fs-xs); color: var(--muted); font-weight: 600; }
+.steps span::before { content: ""; height: 4px; border-radius: 2px; background: var(--line); }
+.steps span.on { color: var(--ink); } .steps span.on::before { background: var(--ink); }
+.done { display: grid; gap: 10px; justify-items: start; }
+.done .big-ok { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--good); border: 2px solid currentColor; }
+
+@media (max-width: 860px) {
+  .live { grid-template-columns: 1fr; }
+  .cols2, .duo.rev { grid-template-columns: 1fr; }
+  .link { flex-direction: row; flex-wrap: wrap; padding: 4px 0; }
+  .link svg { display: none; }
+  .duo { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .reply-grid, .temps { grid-template-columns: 1fr 1fr; }
+  .gauges { grid-column: 1 / -1; }
+  .big .v { font-size: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pkt-req, .pkt-rep, .log tr.fresh td { animation: none; }
+}
+</style>
+<style>
+.dot.off { background: var(--muted); }
+.locked { display: grid; gap: 10px; justify-items: start; }
+.chart-empty { color: var(--muted); font-size: var(--fs-s); padding: 40px 0; text-align: center; }
+.progress { height: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.progress > div { height: 100%; width: 0; background: var(--good); transition: width .2s; }
+.log .tag.test { color: var(--return); border-color: color-mix(in srgb, var(--return) 45%, var(--line)); }
+.log tr.rejected td { color: var(--crit); }
+.log .bad { color: var(--crit); font-weight: 600; }
+input[type=file] { font-size: var(--fs-s); max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+        <rect x="1" y="1" width="32" height="32" rx="8" fill="var(--btn)"></rect>
+        <path d="M17 7c1.6 3.4 5.8 6 5.8 11a5.8 5.8 0 0 1-11.6 0c0-2.4 1.3-4 2.5-5.2.2 1.7 1 2.8 2.1 3.3-.5-3.3.2-6.4 1.2-9.1z" fill="var(--flow)"></path>
+      </svg>
+      <div>
+        <h1>Soft E-CV</h1>
+        <p><span class="mono" id="h-name">–</span> · OpenTherm boiler side · v<span id="h-fw">–</span></p>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip"><span class="dot off" id="wifi-dot"></span>WiFi <b class="num" id="wifi-chip">–</b></span>
+      <span class="chip"><span class="dot off" id="mqtt-dot"></span>MQTT <b id="mqtt-chip">–</b></span>
+      <span class="chip"><span class="dot off" id="ot-dot"></span>OpenTherm <b class="num" id="ot-age">–</b></span>
+      <span class="chip">Up <b class="num" id="uptime">–</b></span>
+      <button class="btn" type="button" id="auth-btn" hidden>Sign in</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Pages">
+    <button class="tab" type="button" role="tab" aria-selected="true" data-view="view-dash">Dashboard</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-view="view-settings">Settings</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-view="view-debug">Debug</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <div class="view" id="view-dash">
+    <section class="panel live" aria-label="Live OpenTherm values">
+      <div class="side">
+        <div class="eyebrow">Received from the Elga</div>
+        <div id="ch-demand"></div>
+        <div>
+          <div style="color:var(--ink-2);font-size:var(--fs-s);display:flex;gap:8px;align-items:center">Control setpoint <span class="id">ID 1</span></div>
+          <div class="big"><span class="v num" id="ch-sp">–</span><span class="u">°C</span></div>
+        </div>
+        <dl class="kv">
+          <dt>Room temperature <span class="id">ID 24</span></dt><dd id="room-t">–</dd>
+          <dt>Room setpoint <span class="id">ID 16</span></dt><dd id="room-sp">–</dd>
+          <dt>Max modulation <span class="id">ID 14</span></dt><dd id="max-mod">–</dd>
+          <dt>Hot water enable <span class="id">ID 0</span></dt><dd id="dhw-en">–</dd>
+        </dl>
+      </div>
+
+      <div class="link" aria-hidden="true">
+        <span class="lbl">OpenTherm</span>
+        <svg viewBox="0 0 120 64" preserveAspectRatio="none">
+          <line class="wire" x1="6" y1="22" x2="110" y2="22"></line>
+          <path class="wire-arrow" d="M114 22l-7-4v8z"></path>
+          <line class="wire" x1="10" y1="42" x2="114" y2="42"></line>
+          <path class="wire-arrow" d="M6 42l7-4v8z"></path>
+          <circle class="pkt-req" cx="10" cy="22" r="3.5"></circle>
+          <circle class="pkt-rep" cx="110" cy="42" r="3.5"></circle>
+        </svg>
+        <span class="meta"><span class="num" id="fpm">–</span> frames/min<br>reply after <span class="num" id="delay">–</span> ms</span>
+      </div>
+
+      <div class="side">
+        <div class="eyebrow">Sent to the Elga</div>
+        <div class="reply-grid">
+          <div class="temps">
+            <div class="temp">
+              <div class="row"><span style="display:inline-flex;gap:6px;align-items:center"><span class="swatch" style="background:var(--flow)"></span>Flow</span><span class="id">ID 25</span></div>
+              <div class="big"><span class="v num" id="flow">–</span><span class="u">°C</span></div>
+              <span class="src" id="flow-src">–</span>
+            </div>
+            <div class="temp">
+              <div class="row"><span style="display:inline-flex;gap:6px;align-items:center"><span class="swatch" style="background:var(--return)"></span>Return</span><span class="id">ID 28</span></div>
+              <div class="big"><span class="v num" id="ret">–</span><span class="u">°C</span></div>
+              <span class="src" id="ret-src">–</span>
+            </div>
+            <div class="delta num" id="delta">–</div>
+          </div>
+          <div class="gauges">
+            <div class="gauge">
+              <svg id="g-mod" viewBox="0 0 120 104" role="img" aria-label="Relative modulation"></svg>
+              <div class="cap">Modulation <span class="id">ID 17</span></div>
+            </div>
+            <div class="gauge">
+              <svg id="g-pres" viewBox="0 0 120 104" role="img" aria-label="CH water pressure"></svg>
+              <div class="cap">Pressure <span class="id">ID 18</span></div>
+            </div>
+          </div>
+          <div class="flags" id="flags"></div>
+          <dl class="kv extra">
+            <dt>Outside temperature <span class="id">ID 27</span> <span class="src">MQTT</span></dt><dd id="out-t">–</dd>
+            <dt>Hot water temperature <span class="id">ID 26</span> <span class="src">MQTT</span></dt><dd id="dhw-t">–</dd>
+            <dt>Max CH setpoint <span class="id">ID 57</span> <span class="src">MQTT</span></dt><dd id="max-ch">–</dd>
+            <dt>Boiler type <span class="id">ID 3</span></dt><dd id="btype">–</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Last 30 minutes</h2>
+        <div class="legend">
+          <span><i style="border-color:var(--flow)"></i>Flow</span>
+          <span><i style="border-color:var(--return)"></i>Return</span>
+          <span><i style="border-color:var(--setp);border-top-style:dashed"></i>Control setpoint</span>
+          <span><i style="border-color:var(--ink-2)"></i>Modulation</span>
+        </div>
+      </div>
+      <div class="trend-wrap" id="trend-wrap">
+        <div id="trend"></div>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <p class="note">One point every 10 seconds, kept in the D1's memory. The history starts again after a restart.</p>
+    </section>
+
+    <div class="duo">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>1-Wire sensors</h2>
+          <div class="actions">
+            <button class="btn" type="button" id="scan-btn">Scan bus</button>
+            <button class="btn primary" type="button" id="save-btn" disabled>Save assignment</button>
+          </div>
+        </div>
+        <div class="tbl-scroll">
+          <table>
+            <thead><tr><th>Address</th><th>Reading</th><th>Used as</th><th>Status</th></tr></thead>
+            <tbody id="sensor-rows"></tbody>
+          </table>
+        </div>
+        <p class="warnline" id="sensor-warn" hidden></p>
+        <p class="note">DS18B20 sensors on pin D3, read every 5 seconds without blocking the OpenTherm loop. The assignment is stored in flash. Both sensors are used only when both read 0–60 °C; otherwise flow and return both come from MQTT. Without either the D1 replies DATA-INVALID.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>System</h2><span class="sub">ESP8266EX</span></div>
+        <dl class="sys">
+          <dt>Firmware</dt><dd id="s-fw">–</dd>
+          <dt>Arduino core</dt><dd id="s-core">–</dd>
+          <dt>Reset reason</dt><dd id="s-reset">–</dd>
+          <dt>Free memory</dt><dd><span class="num" id="s-heap">–</span><div class="bar"><div id="s-heapbar" style="width:0"></div></div></dd>
+          <div class="sep"></div>
+          <dt>Network</dt><dd id="s-ssid">–</dd>
+          <dt>IP address</dt><dd class="mono" id="s-ip">–</dd>
+          <dt>MAC</dt><dd class="mono" id="s-mac">–</dd>
+          <dt>MQTT broker</dt><dd class="mono" id="s-broker">–</dd>
+          <dt>Last MQTT message</dt><dd class="num" id="s-mqttage">–</dd>
+          <div class="sep"></div>
+          <dt>OpenTherm frames</dt><dd class="num" id="s-frames">–</dd>
+          <dt>Rejected frames</dt><dd class="num" id="s-invalid">–</dd>
+          <dt>Unsupported IDs asked</dt><dd class="num" id="s-unknown">–</dd>
+          <dt>Reply delay</dt><dd><span id="s-delay">–</span> ms <span style="color:var(--muted);font-weight:500">(spec 20–800 ms)</span></dd>
+        </dl>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>OpenTherm traffic</h2>
+        <span class="sub">Last 30 conversations, newest first</span>
+      </div>
+      <div class="tbl-scroll">
+        <table class="log">
+          <thead><tr><th>Time</th><th>ID</th><th>Message</th><th>Elga request</th><th></th><th>Reply</th><th style="text-align:right">Value</th></tr></thead>
+          <tbody id="log-rows"><tr><td colspan="7" class="desc">Waiting for the first frame from the Elga.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="view" id="view-settings" hidden>
+    <section class="panel locked" id="settings-locked" hidden>
+      <h2>Sign in to view and change the settings</h2>
+      <button class="btn primary" type="button" id="settings-signin">Sign in</button>
+    </section>
+    <div class="cols2" id="settings-body" hidden>
+      <section class="panel">
+        <div class="panel-head"><h2>WiFi network</h2><span class="sub">The D1 only sees 2.4 GHz networks</span></div>
+        <div class="current" id="wifi-current">–</div>
+        <div class="form" style="margin-top:14px">
+          <div class="panel-head" style="margin:0"><span class="eyebrow">Networks in range</span><button class="btn" type="button" id="wifi-scan">Scan</button></div>
+          <ul class="nets" id="nets"><li><label><span class="name" style="font-weight:400;color:var(--muted)">Press Scan to list the networks.</span></label></li></ul>
+          <div class="field"><label for="wifi-pw">Password</label><input id="wifi-pw" type="password" autocomplete="off" placeholder="Leave empty to keep the saved password"></div>
+          <div class="actions"><button class="btn primary" type="button" id="wifi-connect">Connect</button></div>
+        </div>
+        <div class="sep-h"></div>
+        <div class="field">
+          <label for="ap-after">Start the setup hotspot when WiFi is lost for</label>
+          <select id="ap-after"><option value="0">Never</option><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option></select>
+          <span class="hint">Hotspot <b class="mono" id="ap-name">–</b> at 192.168.4.1, protected with the admin password. OpenTherm keeps answering the Elga while the hotspot is on.</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>MQTT broker</h2><span class="chip"><span class="dot off" id="mq-dot"></span><span id="mq-state">–</span></span></div>
+        <div class="form">
+          <div class="form-row">
+            <div class="field"><label for="mq-host">Broker address</label><input id="mq-host" autocomplete="off"></div>
+            <div class="field"><label for="mq-port">Port</label><input id="mq-port" inputmode="numeric"></div>
+          </div>
+          <div class="field"><label for="mq-user">User name</label><input id="mq-user" autocomplete="off"></div>
+          <div class="field"><label for="mq-pw">Password</label><input id="mq-pw" type="password" autocomplete="off"></div>
+          <div class="field"><label for="mq-id">Client ID</label><input id="mq-id"><span class="hint">Must be unique on the broker. Topics stay under <span class="mono">ecv/…</span> as before.</span></div>
+          <div class="actions"><button class="btn primary" type="button" id="mq-save">Save and reconnect</button></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Device</h2></div>
+        <div class="form">
+          <div class="field"><label for="dev-name">Device name</label><input id="dev-name">
+            <span class="hint" id="dev-hint">–</span></div>
+          <div class="field"><label for="dev-type">Boiler type reported to the Elga (ID 3)</label>
+            <select id="dev-type"><option value="0">On/off (as version 1.2.3)</option><option value="1">Modulating</option></select>
+            <span class="hint">The E-CV switches in 7 steps, so "modulating" matches the spec. Compare the Elga's behaviour in the traffic log before keeping it.</span></div>
+          <div class="field"><label for="dev-fault">Missing flow temperature</label>
+            <select id="dev-fault"><option value="1">Report as fault to the Elga (code 25)</option><option value="0">Do not report</option></select>
+            <span class="hint">Without a flow temperature the modulation stays 0 %. When reported, the Elga sees the fault bit (ID 0) and OEM fault code 25 (ID 5).</span></div>
+          <div class="actions">
+            <button class="btn primary" type="button" id="dev-save">Save</button>
+            <button class="btn" type="button" id="pw-btn">Change admin password</button>
+            <button class="btn" type="button" id="restart-btn">Restart device</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Firmware update</h2><span class="sub">Running v<span id="fw-cur">–</span></span></div>
+        <div class="form">
+          <div class="field"><label for="fw-file">Firmware file</label><input id="fw-file" type="file" accept=".bin">
+            <span class="hint">PlatformIO builds it at .pio/build/d1_mini/firmware.bin. Settings are kept.</span></div>
+          <div class="progress" id="fw-progress" hidden><div></div></div>
+          <p class="result" id="fw-result"></p>
+          <div class="actions"><button class="btn primary" type="button" id="fw-upload">Upload and restart</button></div>
+        </div>
+        <div class="sep-h"></div>
+        <h2 style="margin-bottom:8px">Erase settings</h2>
+        <p class="note" style="margin:0 0 12px">Erases WiFi, MQTT, the admin password and the sensor assignment. The D1 restarts with the setup hotspot. Pressing the reset button twice within 3 seconds also starts the hotspot, with the settings kept.</p>
+        <div id="erase-box"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- DEBUG -->
+  <div class="view" id="view-debug" hidden>
+    <div class="duo rev">
+      <section class="panel">
+        <div class="panel-head"><h2>Debug messages</h2><span class="sub" id="dbg-keep-note">All off after a restart</span></div>
+        <div id="toggles"></div>
+        <div class="sep-h"></div>
+        <div id="outputs"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Live log</h2>
+          <div class="actions"><button class="btn" type="button" id="log-pause">Pause</button><button class="btn" type="button" id="log-clear">Clear</button></div>
+        </div>
+        <div class="console" id="console" aria-live="off"><div class="empty">Waiting for messages. System messages always show here; switch on a debug message type for more.</div></div>
+        <p class="note">The D1 keeps the last 32 messages. OpenTherm traffic and Decode steps produce several lines per second.</p>
+      </section>
+    </div>
+  </div>
+
+  <footer>Soft E-CV · served by the D1 · no internet needed</footer>
+</div>
+
+<!-- Sign in -->
+<dialog id="login" aria-labelledby="login-title">
+  <form class="dlg" id="login-form" method="dialog">
+    <h2 id="login-title" style="font-size:var(--fs-l)">Sign in</h2>
+    <div class="field"><label for="login-user">User name</label><input id="login-user" value="admin" readonly autocomplete="username"></div>
+    <div class="field"><label for="login-pw">Password</label><input id="login-pw" type="password" autocomplete="current-password"></div>
+    <p class="err" id="login-err"></p>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn" type="button" id="login-cancel">Cancel</button>
+      <button class="btn primary" type="submit">Sign in</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Set or change the admin password -->
+<dialog id="pwdlg" aria-labelledby="pw-title">
+  <form class="dlg" id="pw-form" method="dialog">
+    <div class="eyebrow" id="pw-eyebrow">First start</div>
+    <h2 id="pw-title" style="font-size:var(--fs-l)">Set the admin password</h2>
+    <p>This password protects firmware updates and settings, and the setup hotspot. You need it when you sign in from a new browser.</p>
+    <div class="field"><label for="pw-user">User name</label><input id="pw-user" value="admin" readonly autocomplete="username"></div>
+    <div class="field"><label for="pw-new">New password</label><input id="pw-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+    <div class="field"><label for="pw-new2">Repeat password</label><input id="pw-new2" type="password" autocomplete="new-password"></div>
+    <p class="err" id="pw-err"></p>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn" type="button" id="pw-cancel">Cancel</button>
+      <button class="btn primary" type="submit">Save password</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- First setup from the hotspot -->
+<dialog id="hotspot" aria-labelledby="hs-title">
+  <div class="dlg">
+    <div class="hs-top"><span class="eyebrow" id="hs-ap">Setup hotspot</span></div>
+    <h2 id="hs-title" style="font-size:var(--fs-l)">Set up Soft E-CV</h2>
+    <div class="steps" id="hs-steps" aria-hidden="true"><span>WiFi</span><span>MQTT</span><span>Password</span></div>
+    <div id="hs-body"></div>
+    <p class="err" id="hs-err"></p>
+    <div class="actions" style="justify-content:space-between">
+      <button class="btn" type="button" id="hs-back">Back</button>
+      <span class="actions"><button class="btn" type="button" id="hs-skip" hidden>Skip for now</button><button class="btn primary" type="button" id="hs-next">Next</button></span>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (v, d = 1) => (v == null || isNaN(v) ? '–' : Number(v).toFixed(d).replace('-', '−'));
+  let S = null;                 // last /api/status
+  let view = 'view-dash';
+
+  /* ---------- API ---------- */
+  async function api(path, data) {
+    const opt = data ? { method: 'POST', body: new URLSearchParams(data) } : {};
+    const r = await fetch(path, opt);
+    let j = {};
+    try { j = await r.json(); } catch (e) { }
+    if (r.status === 401) { openLogin(); throw new Error(j.error || 'Sign in first.'); }
+    if (r.status === 503) { const e = new Error('The D1 is busy. Try again in a moment.'); e.busy = true; throw e; }
+    if (!r.ok) throw new Error(j.error || `Request failed (${r.status}).`);
+    return j;
+  }
+  let tt;
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 3600); }
+  const act = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+
+  /* ---------- OpenTherm decoding ---------- */
+  const TYPES = ['READ-DATA', 'WRITE-DATA', 'INVALID-DATA', 'RESERVED', 'READ-ACK', 'WRITE-ACK', 'DATA-INVALID', 'UNKNOWN-DATAID'];
+  const IDS = {
+    0: ['Status flags', 'status'], 1: ['Control setpoint', 'f88', '°C'], 2: ['Elga configuration', 'u8u8'], 3: ['Boiler configuration', 'cfg'],
+    5: ['Fault flags', 'u8u8'], 14: ['Max relative modulation', 'f88', '%'], 15: ['Capacity / min modulation', 'cap'], 16: ['Room setpoint', 'f88', '°C'],
+    17: ['Relative modulation', 'f88', '%'], 18: ['CH water pressure', 'f88', 'bar'], 19: ['DHW flow rate', 'f88', 'l/min'], 20: ['Day and time', 'u8u8'],
+    21: ['Date', 'u8u8'], 22: ['Year', 'u16'], 24: ['Room temperature', 'f88', '°C'], 25: ['Boiler flow temperature', 'f88', '°C'],
+    26: ['DHW temperature', 'f88', '°C'], 27: ['Outside temperature', 'f88', '°C'], 28: ['Return water temperature', 'f88', '°C'],
+    48: ['DHW setpoint bounds', 's8s8', '°C'], 49: ['Max CH setpoint bounds', 's8s8', '°C'], 56: ['DHW setpoint', 'f88', '°C'],
+    57: ['Max CH water setpoint', 'f88', '°C'], 100: ['Remote override function', 'u8u8'], 115: ['OEM diagnostic code', 'u16'],
+    116: ['Burner starts', 'u16'], 117: ['CH pump starts', 'u16'], 118: ['DHW pump starts', 'u16'], 119: ['DHW burner starts', 'u16'],
+    120: ['Burner hours', 'u16'], 121: ['CH pump hours', 'u16'], 122: ['DHW pump hours', 'u16'], 123: ['DHW burner hours', 'u16'],
+    124: ['Elga OpenTherm version', 'f88'], 125: ['Boiler OpenTherm version', 'f88'], 126: ['Elga product version', 'u8u8'], 127: ['Boiler product version', 'u8u8']
+  };
+  const hex = s => parseInt(s, 16) >>> 0;
+  const ftype = f => (f >>> 28) & 7;
+  const fid = f => (f >>> 16) & 255;
+  const fdata = f => f & 0xffff;
+  const s16 = d => (d & 0x8000 ? d - 0x10000 : d);
+  const s8 = d => (d & 0x80 ? d - 0x100 : d);
+  function value(id, data, req) {
+    const k = IDS[id] || ['', 'u16'];
+    switch (k[1]) {
+      case 'f88': return fmt(s16(data) / 256, 2) + (k[2] ? ' ' + k[2] : '');
+      case 'status': {
+        const hb = req >>> 8, lb = data & 255, p = [];
+        p.push(hb & 1 ? 'CH on' : 'CH off');
+        if (lb & 1) p.push('FAULT'); if (lb & 2) p.push('CH active'); if (lb & 8) p.push('flame');
+        return p.join(' · ');
+      }
+      case 'cfg': return (data >> 8) & 2 ? 'on/off' : 'modulating';
+      case 'cap': return `${data >> 8} kW · min ${data & 255} %`;
+      case 's8s8': return `${s8(data >> 8)} / ${s8(data & 255)} ${k[2] || ''}`;
+      case 'u8u8': return `${data >> 8} / ${data & 255}`;
+      default: return String(data);
+    }
+  }
+  const REJECT = f => (f & 4 ? 'parity error' : f & 8 ? 'wrong message type' : f & 16 ? 'damaged frame' : 'rejected');
+
+  /* ---------- tabs ---------- */
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(o => { o.setAttribute('aria-selected', o === t); $('#' + o.dataset.view).hidden = o !== t; });
+    view = t.dataset.view;
+    if (view === 'view-dash') renderTrend();
+    if (view === 'view-settings') showSettings();
+    if (view === 'view-debug') loadDebug();
+  }));
+
+  /* ---------- gauges ---------- */
+  const polar = (cx, cy, r, deg) => { const a = (deg - 90) * Math.PI / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  function arc(cx, cy, r, a0, a1) {
+    if (a1 - a0 < 0.01) a1 = a0 + 0.01;
+    const [x0, y0] = polar(cx, cy, r, a0), [x1, y1] = polar(cx, cy, r, a1);
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+  const CX = 60, CY = 56, R = 42, A0 = -135, A1 = 135;
+  const ang = (v, lo, hi) => A0 + (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * (A1 - A0);
+  function ticks(lo, hi) {
+    const [x0, y0] = polar(CX, CY, R, A0), [x1, y1] = polar(CX, CY, R, A1);
+    return `<text class="g-tick" x="${x0 + 2}" y="${y0 + 15}" text-anchor="middle">${lo}</text><text class="g-tick" x="${x1 - 2}" y="${y1 + 15}" text-anchor="middle">${hi}</text>`;
+  }
+  function drawMod(v, m) {
+    const [mx0, my0] = polar(CX, CY, R - 8, ang(m, 0, 100)), [mx1, my1] = polar(CX, CY, R + 8, ang(m, 0, 100));
+    $('#g-mod').innerHTML = `<path class="g-track" d="${arc(CX, CY, R, A0, A1)}"></path>` +
+      (v > 0 ? `<path class="g-mod" d="${arc(CX, CY, R, A0, ang(v, 0, 100))}"></path>` : '') +
+      (m < 100 ? `<line class="g-mark" x1="${mx0}" y1="${my0}" x2="${mx1}" y2="${my1}"><title>Max modulation ${m}%</title></line>` : '') +
+      `<text class="g-val" x="${CX}" y="${CY + 6}" text-anchor="middle">${v == null ? '–' : Math.round(v)}</text>` +
+      `<text class="g-unit" x="${CX}" y="${CY + 20}" text-anchor="middle">%</text>` + ticks(0, 100);
+  }
+  function drawPres(v) {
+    const lo = 0, hi = 4, ZR = R + 9;
+    const zones = [[0, .8, 'crit'], [.8, 1.2, 'warn'], [1.2, 2.5, 'good'], [2.5, 3, 'warn'], [3, 4, 'crit']];
+    $('#g-pres').innerHTML = zones.map(([a, b, c]) => `<path class="g-zone-${c}" d="${arc(CX, CY, ZR, ang(a, lo, hi) + 1, ang(b, lo, hi) - 1)}"></path>`).join('') +
+      `<path class="g-track" d="${arc(CX, CY, R, A0, A1)}"></path>` +
+      (v != null ? `<path class="g-pres" d="${arc(CX, CY, R, A0, ang(v, lo, hi))}"></path>` : '') +
+      `<text class="g-val" x="${CX}" y="${CY + 6}" text-anchor="middle">${fmt(v)}</text>` +
+      `<text class="g-unit" x="${CX}" y="${CY + 20}" text-anchor="middle">bar</text>` + ticks(lo, hi);
+  }
+
+  /* ---------- status ---------- */
+  const flame = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 .8c.8 1.8 3 3.1 3 5.7a3 3 0 0 1-6 0c0-1.2.7-2.1 1.3-2.7.1.9.5 1.4 1.1 1.7C5.2 3.8 5.5 2.2 6 .8z" fill="currentColor"/></svg>';
+  const check = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3 4.7-5" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>';
+  const off = '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>';
+  const upt = s => { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return `${d}d ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+  const ago = s => (s < 0 ? 'never' : s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ago`);
+  const MQTT_STATES = { '-4': 'no answer', '-3': 'connection lost', '-2': 'cannot reach broker', '-1': 'disconnected', 0: 'connected', 1: 'protocol refused', 2: 'client ID refused', 3: 'broker unavailable', 4: 'wrong user name or password', 5: 'not authorised' };
+  const dot = (sel, cls) => { $(sel).className = 'dot ' + cls; };
+  const SRC = { sensor: '1-Wire sensor', mqtt: 'from MQTT', none: 'no value' };
+
+  let pageFw = null;
+  function renderStatus() {
+    const s = S, l = s.leader, e = s.ecv;
+    //After a firmware update the open page is the old one: load the new page
+    if (pageFw && s.fw !== pageFw) { location.reload(); return; }
+    pageFw = s.fw;
+    $('#h-name').textContent = s.name; $('#h-fw').textContent = s.fw;
+    dot('#wifi-dot', s.wifi.ok ? 'good' : s.wifi.ap ? 'warn' : 'crit');
+    $('#wifi-chip').textContent = s.wifi.ok ? `${s.wifi.rssi} dBm`.replace('-', '−') : s.wifi.ap ? 'hotspot' : 'offline';
+    dot('#mqtt-dot', s.mqtt.ok ? 'good' : s.mqtt.host ? 'crit' : 'off');
+    $('#mqtt-chip').textContent = s.mqtt.ok ? 'connected' : s.mqtt.host ? 'offline' : 'not set';
+    const age = s.ot.age_ms;
+    dot('#ot-dot', age < 0 ? 'off' : age < 3000 ? 'good' : age < 10000 ? 'warn' : 'crit');
+    $('#ot-age').textContent = age < 0 ? 'no frames yet' : (age / 1000).toFixed(1) + ' s ago';
+    $('#uptime').textContent = upt(s.up);
+    const ab = $('#auth-btn'); ab.hidden = !s.auth.set; ab.textContent = s.auth.ok ? 'Sign out' : 'Sign in';
+
+    $('#ch-demand').innerHTML = !l.seen ? `<span class="pill">${off}No status from the Elga yet</span>` :
+      l.ch ? `<span class="pill on">${flame}Heating requested</span>` : `<span class="pill">${off}No heat demand</span>`;
+    $('#ch-sp').textContent = fmt(l.sp);
+    $('#room-t').textContent = l.room_t == null ? '–' : fmt(l.room_t) + ' °C';
+    $('#room-sp').textContent = l.room_sp == null ? '–' : fmt(l.room_sp) + ' °C';
+    $('#max-mod').textContent = fmt(l.max_mod, 0) + ' %';
+    $('#dhw-en').textContent = l.seen ? (l.dhw ? 'On' : 'Off') : '–';
+    $('#fpm').textContent = s.ot.fpm; $('#delay').textContent = s.ot.delay;
+
+    $('#flow').textContent = fmt(e.flow); $('#flow-src').textContent = SRC[e.flow_src];
+    $('#ret').textContent = fmt(e.ret); $('#ret-src').textContent = SRC[e.ret_src];
+    $('#delta').textContent = e.flow != null && e.ret != null ? `ΔT flow − return ${fmt(e.flow - e.ret)} K` : 'ΔT –';
+    drawMod(e.mod, Math.min(l.max_mod, e.max_mod)); drawPres(e.pres);
+    $('#flags').innerHTML =
+      (e.fault ? `<span class="pill crit">⚠ Fault reported</span>` : e.sensor_fault ? `<span class="pill crit">⚠ Fault 25: no flow temperature</span>` : `<span class="pill good">${check}No fault</span>`) +
+      `<span class="pill${e.ch_mode ? ' on' : ''}">${e.ch_mode ? check : off}CH active</span>` +
+      `<span class="pill${e.flame ? ' on' : ''}">${e.flame ? flame : off}Heating element ${e.flame ? 'on' : 'off'}</span>`;
+    $('#out-t').textContent = fmt(e.out) + ' °C';
+    $('#dhw-t').textContent = fmt(e.dhw_t) + ' °C';
+    $('#max-ch').textContent = fmt(e.max_ch, 0) + ' °C';
+    $('#btype').textContent = e.modulating ? 'Modulating' : 'On/off';
+
+    $('#s-fw').textContent = s.fw; $('#s-core').textContent = s.core; $('#s-reset').textContent = s.reset + (s.reset_info ? ` · ${s.reset_info}` : '');
+    $('#s-heap').textContent = (s.heap / 1024).toFixed(1) + ' KB free, largest block ' + (s.heap_block / 1024).toFixed(1) + ' KB' + (s.busy ? ` · ${s.busy} requests answered busy` : '');
+    $('#s-heapbar').style.width = Math.min(100, s.heap / 40960 * 100).toFixed(0) + '%';
+    $('#s-ssid').textContent = s.wifi.ok ? s.wifi.ssid : s.wifi.ap ? `hotspot ${s.wifi.ap_ssid}` : 'not connected';
+    $('#s-ip').textContent = s.wifi.ok ? s.wifi.ip : '–'; $('#s-mac').textContent = s.wifi.mac;
+    $('#s-broker').textContent = s.mqtt.host ? `${s.mqtt.host}:${s.mqtt.port}` : 'not set';
+    $('#s-mqttage').textContent = ago(s.mqtt.rx_age);
+    $('#s-frames').textContent = s.ot.frames.toLocaleString('en');
+    $('#s-invalid').textContent = `${s.ot.invalid} (incomplete: ${s.ot.timeouts})`;
+    $('#s-unknown').textContent = s.ot.unknown;
+    $('#s-delay').textContent = s.ot.delay;
+
+    $('#mq-dot').className = 'dot ' + (s.mqtt.ok ? 'good' : s.mqtt.host ? 'crit' : 'off');
+    $('#mq-state').textContent = s.mqtt.host ? MQTT_STATES[s.mqtt.state] || `state ${s.mqtt.state}` : 'not set';
+    $('#wifi-current').innerHTML = s.wifi.ok ? `<span class="dot good"></span><b>${esc(s.wifi.ssid)}</b><span class="num">${s.wifi.rssi} dBm</span><span class="mono">${s.wifi.ip}</span>`
+      : `<span class="dot crit"></span><b>${s.wifi.ssid ? esc(s.wifi.ssid) + ' not connected' : 'No network set'}</b>`;
+    $('#ap-name').textContent = s.wifi.ap_ssid;
+    $('#fw-cur').textContent = s.fw;
+  }
+
+  /* ---------- trend ---------- */
+  let H = null, hoverIdx = null;
+  function renderTrend() {
+    const box = $('#trend');
+    if (!H || !H.flow.length) { box.innerHTML = '<div class="chart-empty">Collecting data. The first point appears after 10 seconds.</div>'; return; }
+    const W = Math.max(300, box.clientWidth);
+    const ml = 34, mr = W < 520 ? 70 : 96, H1 = 210, gap = 26, H2 = 82, axis = 22;
+    const Ht = H1 + gap + H2 + axis, iw = W - ml - mr, n = H.flow.length, step = H.step || 10;
+    const x = i => ml + (n > 1 ? i / (n - 1) : 1) * iw;
+    const all = H.flow.concat(H.ret, H.sp).filter(v => v != null);
+    const yLo = all.length ? Math.floor((Math.min(...all) - 2) / 10) * 10 : 0, yHi = all.length ? Math.ceil((Math.max(...all) + 2) / 10) * 10 : 80;
+    const y = v => 8 + (yHi - v) / (yHi - yLo || 1) * (H1 - 16);
+    const t2 = H1 + gap, y2 = v => t2 + (100 - v) / 100 * H2;
+    let s = '';
+    for (let v = yLo; v <= yHi; v += 10) s += `<line class="grid" x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}"></line><text class="tick" x="${ml - 6}" y="${y(v) + 3.5}" text-anchor="end">${v}°</text>`;
+    for (const v of [0, 50, 100]) s += `<line class="grid" x1="${ml}" x2="${W - mr}" y1="${y2(v)}" y2="${y2(v)}"></line><text class="tick" x="${ml - 6}" y="${y2(v) + 3.5}" text-anchor="end">${v}%</text>`;
+    s += `<text class="tick ttl" x="${ml}" y="${t2 - 8}">Modulation</text>`;
+    const per5 = Math.round(300 / step);
+    for (let i = n - 1 - per5; i >= 0; i -= per5) s += `<text class="tick" x="${x(i)}" y="${Ht - 6}" text-anchor="middle">−${Math.round((n - 1 - i) * step / 60)} min</text>`;
+    s += `<text class="tick" x="${x(n - 1)}" y="${Ht - 6}" text-anchor="end">now</text>`;
+    const line = (arr, yf) => { let d = '', pen = false; arr.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yf(v).toFixed(1); pen = true; }); return d; };
+    let sp = '', last = null;
+    H.sp.forEach((v, i) => { if (v == null) { last = null; return; } sp += last == null ? `M${x(i).toFixed(1)} ${y(v).toFixed(1)}` : `H${x(i).toFixed(1)}V${y(v).toFixed(1)}`; last = v; });
+    s += `<path class="l-sp" d="${sp}"></path><path class="l-ret" d="${line(H.ret, y)}"></path><path class="l-flow" d="${line(H.flow, y)}"></path>`;
+    const ml2 = line(H.mod, y2);
+    if (ml2) s += `<path class="a-mod" d="${ml2}L${x(n - 1)} ${y2(0)}L${x(0)} ${y2(0)}Z"></path><path class="l-mod" d="${ml2}"></path>`;
+    const lastOf = a => a[n - 1];
+    if (lastOf(H.flow) != null) s += `<circle class="end flow" cx="${x(n - 1)}" cy="${y(lastOf(H.flow))}" r="4.5"></circle>`;
+    if (lastOf(H.ret) != null) s += `<circle class="end ret" cx="${x(n - 1)}" cy="${y(lastOf(H.ret))}" r="4.5"></circle>`;
+    const labs = [['Setpoint', lastOf(H.sp), 0], ['Flow', lastOf(H.flow), 1], ['Return', lastOf(H.ret), 1]]
+      .filter(l => l[1] != null).map(([name, v, d]) => ({ name, txt: fmt(v, d) + '°', y: y(v) })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 26) labs[i].y = labs[i - 1].y + 26;
+    for (const l of labs) s += `<text class="dlab" x="${W - mr + 10}" y="${l.y - 1}">${l.txt}</text><text class="dlab-sub" x="${W - mr + 10}" y="${l.y + 11}">${l.name}</text>`;
+    if (lastOf(H.mod) != null) s += `<text class="dlab" x="${W - mr + 10}" y="${y2(lastOf(H.mod)) + 4}">${Math.round(lastOf(H.mod))}%</text>`;
+    s += `<line class="cross" id="cx1" y1="4" y2="${H1}" visibility="hidden"></line><line class="cross" id="cx2" y1="${t2}" y2="${t2 + H2}" visibility="hidden"></line>`;
+    s += `<rect id="hit" x="${ml}" y="0" width="${iw}" height="${Ht - axis}" fill="transparent"></rect>`;
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${Ht}" height="${Ht}" role="img" aria-label="Flow, return and setpoint temperature and modulation over the last 30 minutes">${s}</svg>`;
+    const hit = box.querySelector('#hit');
+    const show = i => {
+      hoverIdx = i;
+      const X = x(i);
+      for (const id of ['#cx1', '#cx2']) { const el = box.querySelector(id); el.setAttribute('x1', X); el.setAttribute('x2', X); el.setAttribute('visibility', 'visible'); }
+      const secs = Math.round((n - 1 - i) * step), mm = Math.floor(secs / 60), ss = secs % 60;
+      const tip = $('#tip');
+      const row = (c, dash, name, v) => `<span class="r"><span><i style="border-color:var(${c})${dash ? ';border-top-style:dashed' : ''}"></i>${name}</span><b class="num">${v}</b></span>`;
+      tip.innerHTML = `<span class="t">${secs ? `${mm} min ${String(ss).padStart(2, '0')} s ago` : 'now'}</span>` +
+        row('--flow', 0, 'Flow', H.flow[i] == null ? '–' : fmt(H.flow[i]) + ' °C') + row('--return', 0, 'Return', H.ret[i] == null ? '–' : fmt(H.ret[i]) + ' °C') +
+        row('--setp', 1, 'Setpoint', H.sp[i] == null ? '–' : fmt(H.sp[i]) + ' °C') + row('--ink-2', 0, 'Modulation', H.mod[i] == null ? '–' : Math.round(H.mod[i]) + ' %');
+      tip.hidden = false;
+      const sx = box.clientWidth / W, tw = tip.offsetWidth;
+      tip.style.left = (X * sx + 14 + tw > box.clientWidth ? X * sx - 14 - tw : X * sx + 14) + 'px';
+      tip.style.top = '10px';
+    };
+    hit.addEventListener('pointermove', ev => { const r = hit.getBoundingClientRect(); show(Math.max(0, Math.min(n - 1, Math.round((ev.clientX - r.left) / r.width * (n - 1))))); });
+    hit.addEventListener('pointerleave', () => { hoverIdx = null; $('#tip').hidden = true; });
+    if (hoverIdx != null) show(Math.min(hoverIdx, n - 1));
+  }
+  async function loadHistory() { try { H = await api('/api/history'); if (view === 'view-dash') renderTrend(); } catch (e) { } }
+
+  /* ---------- traffic ---------- */
+  let frames = [], frameSeq = 0, fresh = new Set();
+  async function loadFrames() {
+    const j = await api('/api/frames?after=' + frameSeq);
+    const nowDev = j.now, nowLocal = Date.now();
+    for (const f of j.frames) { f.time = new Date(nowLocal - (nowDev - f.t)); frames.unshift(f); fresh.add(f.s); frameSeq = f.s; }
+    frames.length = Math.min(frames.length, 30);
+    if (j.frames.length) renderFrames();
+    if (j.frames.length === 40) loadFrames();
+  }
+  function renderFrames() {
+    $('#log-rows').innerHTML = frames.map(f => {
+      const q = hex(f.q), id = fid(q), name = (IDS[id] || ['Unsupported data-id'])[0];
+      const qt = TYPES[ftype(q)], test = f.f & 2 ? ' <span class="tag test">TEST</span>' : '';
+      let rep, val;
+      if (f.r) {
+        const r = hex(f.r), rt = ftype(r);
+        rep = `<span class="tag${rt === 5 ? ' w' : ''}">${TYPES[rt]}</span> B-${f.r}`;
+        val = rt === 4 || rt === 5 ? value(id, fdata(r), fdata(q)) : `<span class="bad">${TYPES[rt]}</span>`;
+      } else { rep = `<span class="bad">no reply: ${REJECT(f.f)}</span>`; val = ''; }
+      return `<tr${fresh.has(f.s) ? ' class="fresh"' : ''}${f.r ? '' : ' class="rejected"'}><td>${f.time.toTimeString().slice(0, 8)}</td><td>${id}</td><td class="desc">${esc(name)}${test}</td>` +
+        `<td><span class="tag${ftype(q) === 1 ? ' w' : ''}">${qt}</span> T-${f.q}</td><td class="arrow">→</td><td>${rep}</td><td class="val">${val}</td></tr>`;
+    }).join('');
+    fresh.clear();
+  }
+
+  /* ---------- sensors ---------- */
+  const ROLES = { flow: 'Heater flow', ret: 'Return water', none: 'Not used' };
+  let SN = null, roles = {}, savedRoles = {}, sensorsEdited = false;
+  const fmtAddr = a => a.match(/../g).join(' ');
+  async function loadSensors(force) {
+    SN = await api('/api/sensors');
+    const addrs = SN.found.map(s => s.a);
+    for (const a of [SN.flow, SN.ret]) if (a && !addrs.includes(a)) addrs.push(a);
+    savedRoles = {};
+    for (const a of addrs) savedRoles[a] = a === SN.flow ? 'flow' : a === SN.ret ? 'ret' : 'none';
+    if (!sensorsEdited || force) { roles = { ...savedRoles }; buildSensors(addrs); }
+    else updateSensorTemps();
+    if (SN.scanning) setTimeout(() => loadSensors(true).catch(() => { }), 1000);
+  }
+  function buildSensors(addrs) {
+    if (!addrs.length) { $('#sensor-rows').innerHTML = '<tr><td colspan="4" class="desc">No sensors found on the bus. Check the wiring and the 4.7 kΩ pull-up, then press Scan bus.</td></tr>'; checkSensors(); return; }
+    $('#sensor-rows').innerHTML = addrs.map((a, i) => {
+      const found = SN.found.find(s => s.a === a);
+      const direct = a === SN.flow ? SN.flow_t : a === SN.ret ? SN.ret_t : null;
+      const st = !found && direct != null ? '<span class="st"><span class="dot warn"></span>Reads OK, missed by scan</span>' :
+        !found ? '<span class="st"><span class="dot crit"></span>Not found on bus</span>' : found.t == null ? '<span class="st"><span class="dot crit"></span>No answer</span>' : `<span class="st"><span class="dot"></span>${roles[a] === 'none' ? 'Available' : 'OK'}</span>`;
+      return `<tr><td class="addr"><span class="family">${a.slice(0, 2)}</span> ${fmtAddr(a.slice(2))}</td><td class="t-cell" id="st-${a}">${found && found.t != null ? fmt(found.t, 2) + ' °C' : !found && direct != null ? fmt(direct, 2) + ' °C' : '–'}</td>` +
+        `<td><select id="role-${a}" data-addr="${a}" aria-label="Role of sensor ${fmtAddr(a)}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}"${k === roles[a] ? ' selected' : ''}>${v}</option>`).join('')}</select></td><td>${st}</td></tr>`;
+    }).join('');
+    document.querySelectorAll('#sensor-rows select').forEach(sel => sel.addEventListener('change', () => { roles[sel.dataset.addr] = sel.value; sensorsEdited = true; checkSensors(); }));
+    checkSensors();
+  }
+  function updateSensorTemps() { for (const s of SN.found) { const el = document.getElementById('st-' + s.a); if (el) el.textContent = s.t == null ? '–' : fmt(s.t, 2) + ' °C'; } }
+  function checkSensors() {
+    const used = Object.values(roles).filter(r => r !== 'none');
+    const dup = used.find((r, i) => used.indexOf(r) !== i);
+    const missing = ['flow', 'ret'].filter(r => !used.includes(r));
+    const w = $('#sensor-warn');
+    if (dup) { w.textContent = `Two sensors are set to ${ROLES[dup]}. Pick one.`; w.hidden = false; }
+    else if (missing.length) { w.textContent = `No sensor is set to ${missing.map(r => ROLES[r]).join(' or ')}. That value comes from MQTT, or is reported as not available.`; w.hidden = false; }
+    else w.hidden = true;
+    $('#save-btn').disabled = !Object.keys(roles).some(a => roles[a] !== savedRoles[a]) || !!dup;
+  }
+  $('#save-btn').addEventListener('click', act(async () => {
+    const flow = Object.keys(roles).find(a => roles[a] === 'flow') || '', ret = Object.keys(roles).find(a => roles[a] === 'ret') || '';
+    await api('/api/sensors/assign', { flow, ret });
+    sensorsEdited = false; await loadSensors(true);
+    toast('Saved. The D1 uses the new sensor assignment from the next reading.');
+  }));
+  $('#scan-btn').addEventListener('click', act(async () => {
+    await api('/api/sensors/scan', {});
+    sensorsEdited = false; toast('Scanning the 1-Wire bus.');
+    setTimeout(() => loadSensors(true).catch(() => { }), 800);
+  }));
+
+  /* ---------- settings ---------- */
+  async function showSettings() {
+    const ok = S && S.auth.ok;
+    $('#settings-locked').hidden = ok; $('#settings-body').hidden = !ok;
+    if (!ok) return;
+    const c = await api('/api/settings');
+    $('#ap-after').value = String(c.ap_fallback_min);
+    $('#mq-host').value = c.mqtt_host; $('#mq-port').value = c.mqtt_port; $('#mq-user').value = c.mqtt_user; $('#mq-id').value = c.mqtt_client_id;
+    $('#mq-pw').value = ''; $('#mq-pw').placeholder = c.mqtt_pass_set ? 'Saved · leave empty to keep' : 'No password';
+    $('#dev-name').value = c.hostname; devHint(); $('#dev-type').value = c.modulating ? '1' : '0'; $('#dev-fault').value = c.report_sensor_fault ? '1' : '0';
+    eraseIdle();
+  }
+  $('#settings-signin').addEventListener('click', () => openLogin());
+  const bars = r => { const n = r > -60 ? 4 : r > -70 ? 3 : r > -80 ? 2 : 1;
+    return `<svg class="bars" width="16" height="12" viewBox="0 0 16 12" aria-hidden="true">${[0, 1, 2, 3].map(i => `<rect class="${i < n ? 'on' : ''}" x="${i * 4}" y="${9 - i * 3}" width="3" height="${3 + i * 3}" rx="1"></rect>`).join('')}</svg>`; };
+  function renderNets(sel, name, nets, current) {
+    $(sel).innerHTML = nets.length ? nets.sort((a, b) => b.r - a.r).map((n, i) => `<li><label><input type="radio" name="${name}" id="${name}-${i}" value="${esc(n.s)}" data-lock="${n.l ? 1 : 0}"${n.s === current ? ' checked' : ''}>
+      <span class="name">${esc(n.s)}</span><span class="meta">${n.l ? 'secured' : 'open'} · <span class="num">${n.r} dBm</span></span>${bars(n.r)}</label></li>`).join('')
+      : '<li><label><span class="name" style="font-weight:400;color:var(--muted)">No networks found. Press Scan again.</span></label></li>';
+  }
+  async function scanWifi(sel, name, btn) {
+    btn.disabled = true; const label = btn.textContent; btn.textContent = 'Scanning…';
+    try {
+      await api('/api/wifi/scan', {});
+      let j;
+      for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 700)); j = await api('/api/wifi/scan'); if (!j.busy) break; }
+      const cur = (document.querySelector(`input[name="${name}"]:checked`) || {}).value || (S && S.wifi.ssid);
+      renderNets(sel, name, j.nets, cur);
+    } finally { btn.disabled = false; btn.textContent = label === 'Scanning…' ? 'Scan' : label; }
+  }
+  $('#wifi-scan').addEventListener('click', act(e => scanWifi('#nets', 'wifi-net', e.currentTarget)));
+  $('#wifi-connect').addEventListener('click', act(async () => {
+    const sel = document.querySelector('input[name="wifi-net"]:checked');
+    if (!sel) throw new Error('Choose a network first.');
+    if (sel.value !== S.wifi.ssid && sel.dataset.lock === '1' && !$('#wifi-pw').value) throw new Error(`${sel.value} is secured. Enter its password.`);
+    await api('/api/settings/wifi', { ssid: sel.value, pass: $('#wifi-pw').value });
+    toast(`Connecting to ${sel.value}. If the IP address changes, open http://${S.name}.local.`);
+  }));
+  $('#ap-after').addEventListener('change', act(async e => { await api('/api/settings/wifi', { ap_fallback_min: e.target.value }); toast('Saved.'); }));
+  $('#mq-save').addEventListener('click', act(async () => {
+    if (!$('#mq-host').value.trim()) throw new Error('Enter the broker address.');
+    await api('/api/settings/mqtt', { host: $('#mq-host').value.trim(), port: $('#mq-port').value, user: $('#mq-user').value, pass: $('#mq-pw').value, client_id: $('#mq-id').value.trim() });
+    $('#mq-pw').value = ''; toast('Saved. MQTT reconnects within a few seconds.');
+  }));
+  function devHint() { const v = $('#dev-name').value.toLowerCase().replace(/[^a-z0-9-]/g, '') || 'soft-ecv'; $('#dev-hint').innerHTML = `Open this page at <b class="mono">http://${v}.local</b> instead of the IP address. The new name works after a restart.`; }
+  $('#dev-name').addEventListener('input', devHint);
+  $('#dev-save').addEventListener('click', act(async () => {
+    await api('/api/settings/device', { hostname: $('#dev-name').value, modulating: $('#dev-type').value, sensor_fault: $('#dev-fault').value });
+    toast('Saved. The boiler type is reported to the Elga from the next ID 3 request.');
+  }));
+  $('#restart-btn').addEventListener('click', act(async () => { await api('/api/restart', {}); toast('Restarting. The page reconnects in about 10 seconds.'); }));
+  function eraseIdle() { $('#erase-box').innerHTML = '<button class="btn danger" type="button" id="erase-btn">Erase all settings</button>'; $('#erase-btn').addEventListener('click', eraseAsk); }
+  function eraseAsk() {
+    $('#erase-box').innerHTML = `<div class="confirm">Erase everything and restart?
+      <button class="btn danger-fill" type="button" id="erase-yes">Erase and restart</button><button class="btn" type="button" id="erase-no">Cancel</button></div>`;
+    $('#erase-yes').addEventListener('click', act(async () => { await api('/api/erase', {}); toast('Settings erased. Connect to the setup hotspot to set up the D1 again.'); eraseIdle(); }));
+    $('#erase-no').addEventListener('click', eraseIdle);
+  }
+  $('#fw-upload').addEventListener('click', () => {
+    const file = $('#fw-file').files[0], res = $('#fw-result'), bar = $('#fw-progress');
+    if (!file) { toast('Choose the firmware.bin file first.'); return; }
+    const fd = new FormData(); fd.append('firmware', file, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/update');
+    bar.hidden = false; res.className = 'result'; res.textContent = 'Uploading…';
+    xhr.upload.onprogress = e => { if (e.lengthComputable) bar.firstElementChild.style.width = (e.loaded / e.total * 100).toFixed(0) + '%'; };
+    xhr.onload = () => {
+      if (xhr.status === 200) { res.className = 'result ok'; res.textContent = 'Firmware updated. The D1 restarts, the page reloads in 15 seconds.'; setTimeout(() => location.reload(), 15000); }
+      else { let m = 'Firmware update failed.'; try { m = JSON.parse(xhr.responseText).error; } catch (e) { } res.textContent = m; if (xhr.status === 401) openLogin(); }
+    };
+    xhr.onerror = () => { res.textContent = 'Upload interrupted. The current firmware keeps running.'; };
+    xhr.send(fd);
+  });
+
+  /* ---------- debug ---------- */
+  const FLAGS = [
+    [0, 'OpenTherm traffic', 'Every request and reply, with decoded value', 'serial_monitor'],
+    [6, '1-Wire sensors', 'Sensor readings and addresses found on the bus', 'serial_onewire'],
+    [1, 'MQTT sent', 'Messages published to the broker', 'serial_mqtt'],
+    [2, 'MQTT received', 'Messages arriving on subscribed topics', 'serial_mqtt_in'],
+    [4, 'Value updates', 'When a value from MQTT changes', 'serial_update'],
+    [3, 'Range checks', 'Values outside the allowed OpenTherm range', 'serial_range'],
+    [5, 'f8.8 conversion', 'Encoding of each reply value', 'serial_convert'],
+    [7, 'Decode steps', 'Internal decoding of each frame (very verbose)', 'serial_debug']
+  ];
+  const tgl = (id, n, d, code) => `<div class="tg"><label class="n" for="${id}">${n}${code ? ` <code>${code}</code>` : ''}</label><span class="d">${d}</span><input class="sw" type="checkbox" role="switch" id="${id}"></div>`;
+  $('#toggles').innerHTML = FLAGS.map(([b, n, d, c]) => tgl('dbg-' + b, n, d, c)).join('');
+  $('#outputs').innerHTML = tgl('out-serial', 'Send to USB serial', '115200 baud', '') + tgl('out-web', 'Show in live log', 'The panel on this page', '') +
+    tgl('out-keep', 'Keep after restart', 'Otherwise all debug messages switch off at the next restart', '');
+  let D = null;
+  async function loadDebug() {
+    D = await api('/api/debug');
+    FLAGS.forEach(([b]) => ($('#dbg-' + b).checked = !!(D.flags & (1 << b))));
+    $('#out-serial').checked = D.serial; $('#out-web').checked = D.web; $('#out-keep').checked = D.keep;
+    $('#dbg-keep-note').textContent = D.keep ? 'Kept after a restart' : 'All off after a restart';
+  }
+  async function saveDebug(e) {
+    let flags = 0; FLAGS.forEach(([b]) => { if ($('#dbg-' + b).checked) flags |= 1 << b; });
+    try { await api('/api/debug', { flags, serial: $('#out-serial').checked ? 1 : 0, web: $('#out-web').checked ? 1 : 0, keep: $('#out-keep').checked ? 1 : 0 }); loadDebug(); }
+    catch (err) { e.target.checked = !e.target.checked; toast(err.message); }
+  }
+  document.querySelectorAll('#view-debug .sw').forEach(sw => sw.addEventListener('change', saveDebug));
+  let logSeq = 0, paused = false;
+  const con = $('#console');
+  async function loadLog() {
+    const lines = await api('/api/log?after=' + logSeq);
+    if (!lines.length) return;
+    logSeq = lines[lines.length - 1].s;
+    if (paused) return;
+    con.querySelector('.empty')?.remove();
+    const up = S ? S.up * 1000 : 0, now = Date.now();
+    for (const l of lines) {
+      const ts = new Date(now - (up - l.t)).toTimeString().slice(0, 8);
+      const el = document.createElement('div');
+      el.innerHTML = `<span class="c">${ts}</span> <span class="k">${l.g.padEnd(7)}</span> ${esc(l.m)}`;
+      con.appendChild(el);
+    }
+    while (con.childElementCount > 300) con.firstElementChild.remove();
+    con.scrollTop = con.scrollHeight;
+  }
+  $('#log-pause').addEventListener('click', e => { paused = !paused; e.currentTarget.textContent = paused ? 'Resume' : 'Pause'; });
+  $('#log-clear').addEventListener('click', () => { con.innerHTML = ''; });
+
+  /* ---------- sign in / password ---------- */
+  const login = $('#login');
+  function openLogin() { if (login.open) return; $('#login-err').textContent = ''; $('#login-pw').value = ''; login.showModal(); }
+  $('#login-cancel').addEventListener('click', () => login.close());
+  $('#login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    try { await api('/api/login', { pass: $('#login-pw').value }); login.close(); await poll(); if (view === 'view-settings') showSettings(); toast('Signed in.'); }
+    catch (err) { $('#login-err').textContent = err.message; }
+  });
+  $('#auth-btn').addEventListener('click', act(async () => {
+    if (S.auth.ok) { await api('/api/logout', {}); await poll(); if (view === 'view-settings') showSettings(); toast('Signed out.'); }
+    else openLogin();
+  }));
+  const pwd = $('#pwdlg');
+  function openPassword(first) {
+    $('#pw-eyebrow').textContent = first ? 'First start' : 'Security';
+    $('#pw-title').textContent = first ? 'Set the admin password' : 'Change the admin password';
+    $('#pw-cancel').hidden = first; $('#pw-err').textContent = ''; $('#pw-new').value = ''; $('#pw-new2').value = '';
+    pwd.showModal();
+  }
+  pwd.addEventListener('cancel', e => { if ($('#pw-cancel').hidden) e.preventDefault(); });
+  $('#pw-btn').addEventListener('click', () => openPassword(false));
+  $('#pw-cancel').addEventListener('click', () => pwd.close());
+  $('#pw-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const a = $('#pw-new').value, b = $('#pw-new2').value;
+    if (a.length < 8) { $('#pw-err').textContent = 'Use at least 8 characters.'; return; }
+    if (a !== b) { $('#pw-err').textContent = 'The two passwords are different. Type them again.'; return; }
+    try { await api('/api/password', { pass: a }); pwd.close(); await poll(); toast('Password saved. You are signed in.'); }
+    catch (err) { $('#pw-err').textContent = err.message; }
+  });
+
+  /* ---------- first setup from the hotspot ---------- */
+  const hs = $('#hotspot');
+  let hsStep = 0, hsData = {}, hsNets = [];
+  hs.addEventListener('cancel', e => e.preventDefault());
+  function hsRender() {
+    $('#hs-err').textContent = '';
+    $('#hs-ap').textContent = 'Hotspot ' + (S ? S.wifi.ap_ssid : '');
+    [...$('#hs-steps').children].forEach((s, i) => s.classList.toggle('on', i <= hsStep));
+    $('#hs-back').hidden = hsStep === 0 || hsStep === 3;
+    $('#hs-skip').hidden = hsStep !== 1;
+    $('#hs-next').hidden = hsStep === 3;
+    $('#hs-next').textContent = hsStep === 2 ? 'Save and connect' : 'Next';
+    $('#hs-steps').hidden = hsStep === 3;
+    const b = $('#hs-body');
+    if (hsStep === 0) {
+      b.innerHTML = `<div class="form"><div class="panel-head" style="margin:0"><span class="hint">Choose the network the D1 should join. Only 2.4 GHz networks are listed.</span><button class="btn" type="button" id="hs-scan">Scan</button></div>
+        <ul class="nets" id="hs-nets"></ul>
+        <div class="field"><label for="hs-pw">WiFi password</label><input id="hs-pw" type="password" autocomplete="off"></div></div>`;
+      renderNets('#hs-nets', 'hs-net', hsNets, hsData.ssid);
+      $('#hs-pw').value = hsData.pass || '';
+      $('#hs-scan').addEventListener('click', act(async e => { await scanWifi('#hs-nets', 'hs-net', e.currentTarget); }));
+      if (!hsNets.length) $('#hs-scan').click();
+    } else if (hsStep === 1) {
+      b.innerHTML = `<div class="form"><p class="hint" style="margin:0">You can also fill this in later under Settings.</p>
+        <div class="form-row"><div class="field"><label for="hs-mq-host">Broker address</label><input id="hs-mq-host" placeholder="192.168.1.10"></div>
+        <div class="field"><label for="hs-mq-port">Port</label><input id="hs-mq-port" value="1883" inputmode="numeric"></div></div>
+        <div class="field"><label for="hs-mq-user">User name</label><input id="hs-mq-user" autocomplete="off"></div>
+        <div class="field"><label for="hs-mq-pw">Password</label><input id="hs-mq-pw" type="password" autocomplete="off"></div></div>`;
+      for (const k of ['host', 'port', 'user', 'pw']) if (hsData['mq_' + k] != null) $('#hs-mq-' + k).value = hsData['mq_' + k];
+    } else if (hsStep === 2) {
+      b.innerHTML = S.auth.set ? `<p class="hint" style="margin:0">The admin password is already set and stays the same.</p>` :
+        `<div class="form"><p class="hint" style="margin:0">Protects settings and firmware updates. The setup hotspot also uses this password from now on.</p>
+        <div class="field"><label for="hs-user">User name</label><input id="hs-user" value="admin" readonly></div>
+        <div class="field"><label for="hs-apw">Admin password</label><input id="hs-apw" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+        <div class="field"><label for="hs-apw2">Repeat password</label><input id="hs-apw2" type="password" autocomplete="new-password"></div></div>`;
+    } else {
+      b.innerHTML = `<div class="done" id="hs-done"><b>Connecting to ${esc(hsData.ssid)}…</b><span class="hint" style="font-size:var(--fs-s)">This takes up to 20 seconds. Your phone may switch networks for a moment.</span></div>`;
+      hsWait(0);
+    }
+  }
+  async function hsWait(tries) {
+    let st = null;
+    try { st = await api('/api/status'); } catch (e) { }
+    if (st && st.wifi.ok) {
+      $('#hs-done').innerHTML = `<span class="big-ok">${check.replace('viewBox', 'width="20" height="20" viewBox')}</span><b>Connected to ${esc(st.wifi.ssid)}</b>
+        <span class="hint" style="font-size:var(--fs-s)">The hotspot switches off 3 minutes after you leave it. Reconnect your phone to ${esc(st.wifi.ssid)} and open<br>
+        <b class="mono">http://${esc(st.name)}.local</b> or <b class="mono">http://${st.wifi.ip}</b></span>`;
+      return;
+    }
+    if (tries > 15) { $('#hs-done').innerHTML = `<b>Could not connect to ${esc(hsData.ssid)}</b><span class="hint" style="font-size:var(--fs-s)">Check the password and try again.</span><button class="btn" type="button" id="hs-retry">Back to WiFi</button>`; $('#hs-retry').addEventListener('click', () => { hsStep = 0; hsRender(); }); return; }
+    setTimeout(() => hsWait(tries + 1), 2000);
+  }
+  function hsKeep() {
+    if (hsStep === 0) { const sel = document.querySelector('input[name="hs-net"]:checked'); hsData.ssid = sel ? sel.value : hsData.ssid; hsData.lock = sel ? sel.dataset.lock === '1' : hsData.lock; hsData.pass = $('#hs-pw').value; }
+    if (hsStep === 1) for (const k of ['host', 'port', 'user', 'pw']) hsData['mq_' + k] = $('#hs-mq-' + k).value;
+  }
+  $('#hs-next').addEventListener('click', async () => {
+    hsKeep();
+    if (hsStep === 0) {
+      if (!hsData.ssid) { $('#hs-err').textContent = 'Choose a network first.'; return; }
+      if (hsData.lock && !hsData.pass) { $('#hs-err').textContent = `${hsData.ssid} is secured. Enter its password.`; return; }
+    }
+    if (hsStep === 2) {
+      let admin = '';
+      if (!S.auth.set) {
+        admin = $('#hs-apw').value;
+        if (admin.length < 8) { $('#hs-err').textContent = 'Use at least 8 characters.'; return; }
+        if (admin !== $('#hs-apw2').value) { $('#hs-err').textContent = 'The two passwords are different. Type them again.'; return; }
+      }
+      try {
+        await api('/api/setup', { ssid: hsData.ssid, pass: hsData.pass || '', mqtt_host: hsData.mq_host || '', mqtt_port: hsData.mq_port || '1883', mqtt_user: hsData.mq_user || '', mqtt_pass: hsData.mq_pw || '', admin });
+      } catch (err) { $('#hs-err').textContent = err.message; return; }
+    }
+    hsStep++; hsRender();
+  });
+  $('#hs-skip').addEventListener('click', () => { hsData.mq_host = ''; hsStep = 2; hsRender(); });
+  $('#hs-back').addEventListener('click', () => { hsKeep(); hsStep--; hsRender(); });
+
+  /* ---------- polling ---------- */
+  let firstStatus = true;
+  async function poll() {
+    S = await api('/api/status');
+    renderStatus();
+    if (firstStatus) {
+      firstStatus = false;
+      if (S.setup) { hsStep = 0; hsRender(); hs.showModal(); }
+      else if (!S.auth.set) openPassword(true);
+    }
+  }
+  async function tick() {
+    try {
+      await poll();
+      if (view === 'view-dash') await loadFrames();
+      if (view === 'view-debug') await loadLog();
+    } catch (e) { if (!e.busy) { $('#ot-age').textContent = 'D1 not reachable'; dot('#ot-dot', 'crit'); } }
+    setTimeout(tick, 2000);
+  }
+  tick();
+  loadHistory(); setInterval(loadHistory, 10000);
+  loadSensors().catch(() => { }); setInterval(() => { if (view === 'view-dash') loadSensors().catch(() => { }); }, 5000);
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderTrend, 120); });
+})();
+</script>
+</body>
+</html>
