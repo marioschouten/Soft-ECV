@@ -1,4 +1,4 @@
-//Version 1.3.8 by Mario M.C. Schouten
+//Version 1.3.9 by Mario M.C. Schouten
 //
 //Arduino Wemo D1 mini based E-C(entral)H(eating) follower using OpenTherm protocol and Ihor Melnyk's slave Terminal adapter for communication.
 //The OpenTherm leader is the Elga heat pump; the modulation is passed on via MQTT to OpenHAB, which switches the E-CV (7 steps, 9 kW).
@@ -36,7 +36,7 @@ extern "C" {
 #include "net.h"
 #include "web.h"
 
-const char* FW_VERSION = "1.3.8";
+const char* FW_VERSION = "1.3.9";
 
 //Double reset detection: pressing reset twice within 3 seconds starts the setup hotspot
 #define DRD_MAGIC   0xEC0DD15Cul
